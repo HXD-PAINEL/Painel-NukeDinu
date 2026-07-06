@@ -1,27 +1,28 @@
 --[[
-    ☢️ NUKE PANEL - Teleporte por nome (3 letras mínimo)
-    - Digite 3 letras e clique em "TP" para teleportar ao jogador
-    - Fly Speed até 1000, Speed até 1000
-    - Animações, tags, allowlist, etc.
-]]
+    ═══════════════════════════════════════════════════════════
+    ☢️ NUKE PANEL v6.1 - Correção do campo de mensagem
+    ═══════════════════════════════════════════════════════════
+--]]
 
+-- ==================== CONFIGURAÇÕES ====================
 local player = game.Players.LocalPlayer
 local runService = game:GetService("RunService")
 local players = game:GetService("Players")
 local userInput = game:GetService("UserInputService")
 local tweenService = game:GetService("TweenService")
-local mouse = player:GetMouse()
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local workspace = game:GetService("Workspace")
 
--- ==================== ALLOWLIST =====================
+-- ==================== ALLOWLIST ========================
 local allowlist = {
-    ["vz_submundo"] = "👑 Dono",          -- Substitua pelo seu nome (minúsculo)
+    ["vz_submundo"] = "👑 Dono",
     ["exemplo_subdono"] = "⭐ Sub-Dono",
     ["exemplo_admin"] = "🛡️ Admin",
     ["exemplo_mod"] = "🔧 Moderador",
     ["exemplo_staff"] = "📋 Staff",
 }
 
--- ==================== ESTADO =====================
+-- ==================== ESTADO GLOBAL ====================
 local state = {
     fly = false,
     flySpeed = 50,
@@ -32,6 +33,7 @@ local state = {
     thirdPerson = false,
     thirdPersonDist = 8,
     panelVisible = false,
+    currentTheme = "roxo",
 }
 
 local flyBodyVel = nil
@@ -41,17 +43,114 @@ local espDrawings = {}
 local espConnection = nil
 local thirdPersonConn = nil
 local panelGui = nil
-local toggleButton = nil
-local tagGui = nil
 local mainFrame = nil
+local toggleButton = nil
+local userCountLabel = nil
+local messageInput = nil
+local sendMessageBtn = nil
+local currentPage = "inicio"
+local themeButtons = {}
+local pages = {}
+local tabButtons = {}
 
--- ==================== VERIFICAÇÃO DE TAG ==========
+-- ==================== VERIFICAÇÃO DE TAG ===============
 local playerName = player.Name:lower()
 local userTag = allowlist[playerName] or nil
 local hasTag = userTag ~= nil
 local displayTag = hasTag and userTag or "🔰 Dinu User"
+local isOwner = hasTag and userTag == "👑 Dono"
 
--- ==================== AUXILIARES ==================
+-- ==================== SISTEMA DE CONTAGEM ==============
+local activeUsers = 0
+
+local function updateUserCount()
+    if not _G.NukeUsers then _G.NukeUsers = {} end
+    _G.NukeUsers[player.UserId] = true
+    activeUsers = 0
+    for _, _ in pairs(_G.NukeUsers) do activeUsers = activeUsers + 1 end
+    if userCountLabel then
+        userCountLabel.Text = "👥 " .. activeUsers .. " online"
+    end
+end
+
+spawn(function()
+    while task.wait(5) do
+        updateUserCount()
+    end
+end)
+
+player:GetPropertyChangedSignal("Parent"):Connect(function()
+    if not player.Parent then
+        if _G.NukeUsers then _G.NukeUsers[player.UserId] = nil end
+    end
+end)
+
+-- ==================== SISTEMA DE MENSAGENS ==============
+local function setupGlobalMessages()
+    local remote = replicatedStorage:FindFirstChild("NukeGlobalMessage")
+    if not remote then
+        remote = Instance.new("RemoteEvent")
+        remote.Name = "NukeGlobalMessage"
+        remote.Parent = replicatedStorage
+    end
+
+    remote.OnClientEvent:Connect(function(sender, msg)
+        if sender == player.Name then return end
+        showNotification("📨 " .. sender .. ": " .. msg, Color3.fromRGB(255, 200, 50))
+    end)
+end
+
+local function showNotification(text, color)
+    local gui = player.PlayerGui:FindFirstChild("NukePanel")
+    if not gui then
+        gui = Instance.new("ScreenGui")
+        gui.Name = "NukePanel"
+        gui.ResetOnSpawn = false
+        gui.Parent = player.PlayerGui
+    end
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 350, 0, 45)
+    frame.Position = UDim2.new(0.5, -175, 1, -60)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.2
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = color or Color3.fromRGB(150, 100, 200)
+    frame.ClipsDescendants = true
+    frame.Parent = gui
+
+    local uic = Instance.new("UICorner")
+    uic.CornerRadius = UDim.new(0, 12)
+    uic.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.TextWrapped = true
+    label.Parent = frame
+
+    frame.Position = UDim2.new(0.5, -175, 1, 20)
+    local tweenIn = tweenService:Create(frame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, -175, 1, -60)
+    })
+    tweenIn:Play()
+
+    task.wait(4)
+    local tweenOut = tweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Position = UDim2.new(0.5, -175, 1, 20)
+    })
+    tweenOut:Play()
+    tweenOut.Completed:Connect(function()
+        frame:Destroy()
+    end)
+end
+
+-- ==================== FUNÇÕES AUXILIARES ================
 local function getChar()
     return player.Character or player.CharacterAdded:Wait()
 end
@@ -66,43 +165,7 @@ local function getHumanoid()
     return char and char:FindFirstChild("Humanoid")
 end
 
--- ==================== TAG VISUAL ==================
-local function createTag()
-    if tagGui then tagGui:Destroy(); tagGui = nil end
-    local char = getChar()
-    if not char then return end
-    local head = char:FindFirstChild("Head")
-    if not head then return end
-
-    tagGui = Instance.new("BillboardGui")
-    tagGui.Size = UDim2.new(0, 200, 0, 30)
-    tagGui.Adornee = head
-    tagGui.StudsOffset = Vector3.new(0, 2.5, 0)
-    tagGui.MaxDistance = 50
-    tagGui.Parent = head
-
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    frame.BackgroundTransparency = 0.3
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(255, 50, 50)
-    frame.Parent = tagGui
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = "☢️ NUKE USER"
-    label.TextColor3 = Color3.fromRGB(255, 80, 80)
-    label.TextScaled = true
-    label.Font = Enum.Font.GothamBold
-    label.Parent = frame
-end
-
-player.CharacterAdded:Connect(function() task.wait(0.5); createTag() end)
-if player.Character then task.wait(0.5); createTag() end
-
--- ==================== FLY (VELOCIDADE ATÉ 1000) ========
+-- ==================== FLY ======
 local function toggleFly(val)
     state.fly = val
     if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
@@ -123,9 +186,9 @@ local function toggleFly(val)
         if not state.fly or not flyBodyVel then return end
         local hum = getHumanoid()
         if not hum then return end
-        local move = hum.MoveDirection
+        local moveDir = hum.MoveDirection
         local spd = state.flySpeed
-        local vel = move * spd
+        local vel = moveDir * spd
         if userInput:IsKeyDown(Enum.KeyCode.Space) then
             vel = vel + Vector3.new(0, spd, 0)
         end
@@ -136,7 +199,7 @@ local function toggleFly(val)
     end)
 end
 
--- ==================== NOCLIP ======================
+-- ==================== NOCLIP ======
 local function toggleNoclip(val)
     state.noclip = val
     if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
@@ -157,17 +220,14 @@ local function toggleNoclip(val)
     end
 end
 
--- ==================== SPEED (ATÉ 1000) =============
+-- ==================== SPEED ======
 local function setSpeed(val)
     state.speed = val
     local hum = getHumanoid()
-    if hum then
-        local base = 16
-        hum.WalkSpeed = base * val
-    end
+    if hum then hum.WalkSpeed = 16 * val end
 end
 
--- ==================== INFINITE JUMP ==============
+-- ==================== INFINITE JUMP ======
 local function toggleInfiniteJump(val)
     state.infiniteJump = val
     local hum = getHumanoid()
@@ -177,7 +237,7 @@ local function toggleInfiniteJump(val)
     end
 end
 
--- ==================== THIRD PERSON ===============
+-- ==================== THIRD PERSON ======
 local function toggleThirdPerson(val)
     state.thirdPerson = val
     if thirdPersonConn then thirdPersonConn:Disconnect(); thirdPersonConn = nil end
@@ -198,7 +258,7 @@ local function toggleThirdPerson(val)
     end
 end
 
--- ==================== ESP ========================
+-- ==================== ESP ======
 local function toggleESP(val)
     state.esp = val
     for _, d in ipairs(espDrawings) do d:Remove() end
@@ -248,7 +308,7 @@ local function toggleESP(val)
     end)
 end
 
--- ==================== FLING =======================
+-- ==================== FLING ======
 local function doFling()
     local root = getRoot()
     if not root then return end
@@ -276,7 +336,7 @@ local function doFling()
     end
 end
 
--- ==================== KILL NEAREST ===============
+-- ==================== KILL NEAREST ======
 local function doKillNearest()
     local root = getRoot()
     if not root then return end
@@ -299,10 +359,10 @@ local function doKillNearest()
     end
 end
 
--- ==================== TELEPORTE POR NOME ===========
+-- ==================== TELEPORTE ======
 local function teleportToPlayerByName(name)
     if not name or #name < 3 then
-        print("Digite pelo menos 3 letras!")
+        showNotification("Digite pelo menos 3 letras!", Color3.fromRGB(255, 100, 100))
         return
     end
     local lowerName = name:lower()
@@ -314,178 +374,604 @@ local function teleportToPlayerByName(name)
                 local root = getRoot()
                 if root then
                     root.CFrame = targetChar.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+                    showNotification("Teleportado para " .. plr.Name, Color3.fromRGB(0, 255, 200))
                 end
             end
             return
         end
     end
-    print("Nenhum jogador encontrado com: " .. name)
+    showNotification("Nenhum jogador encontrado: " .. name, Color3.fromRGB(255, 100, 100))
 end
 
--- ==================== CRIAÇÃO DO PAINEL ==========
+-- ==================== SISTEMA DE TEMAS ==================
+local themes = {
+    roxo = {
+        bg = Color3.fromRGB(18, 12, 28),
+        bg2 = Color3.fromRGB(25, 18, 40),
+        border = Color3.fromRGB(120, 60, 200),
+        accent = Color3.fromRGB(150, 80, 220),
+        accent2 = Color3.fromRGB(180, 120, 240),
+        text = Color3.fromRGB(255, 255, 255),
+        text2 = Color3.fromRGB(200, 180, 220),
+        btnBg = Color3.fromRGB(50, 30, 70),
+        btnHover = Color3.fromRGB(70, 50, 90),
+        highlight = Color3.fromRGB(200, 150, 255),
+    },
+    preto = {
+        bg = Color3.fromRGB(10, 10, 10),
+        bg2 = Color3.fromRGB(20, 20, 20),
+        border = Color3.fromRGB(60, 60, 60),
+        accent = Color3.fromRGB(80, 80, 80),
+        accent2 = Color3.fromRGB(100, 100, 100),
+        text = Color3.fromRGB(255, 255, 255),
+        text2 = Color3.fromRGB(180, 180, 180),
+        btnBg = Color3.fromRGB(40, 40, 40),
+        btnHover = Color3.fromRGB(60, 60, 60),
+        highlight = Color3.fromRGB(150, 150, 150),
+    },
+    cinza = {
+        bg = Color3.fromRGB(28, 28, 32),
+        bg2 = Color3.fromRGB(38, 38, 42),
+        border = Color3.fromRGB(80, 80, 90),
+        accent = Color3.fromRGB(100, 100, 110),
+        accent2 = Color3.fromRGB(130, 130, 140),
+        text = Color3.fromRGB(255, 255, 255),
+        text2 = Color3.fromRGB(200, 200, 210),
+        btnBg = Color3.fromRGB(50, 50, 55),
+        btnHover = Color3.fromRGB(70, 70, 75),
+        highlight = Color3.fromRGB(170, 170, 180),
+    },
+}
+
+local function applyTheme(themeName)
+    state.currentTheme = themeName
+    local theme = themes[themeName] or themes.roxo
+
+    if not mainFrame then return end
+
+    mainFrame.BackgroundColor3 = theme.bg
+    mainFrame.BorderColor3 = theme.border
+
+    for _, child in ipairs(mainFrame:GetChildren()) do
+        if child.Name == "BorderTop" or child.Name == "BorderBottom" or
+           child.Name == "BorderLeft" or child.Name == "BorderRight" then
+            child.BackgroundColor3 = theme.accent
+        end
+    end
+
+    for _, child in ipairs(mainFrame:GetDescendants()) do
+        if child:IsA("TextButton") then
+            if child.Name == "btnInicio" or child.Name == "btnMovimento" or
+               child.Name == "btnVisual" or child.Name == "btnCombate" or
+               child.Name == "btnTeleporte" or child.Name == "btnConfig" then
+                if child.BackgroundColor3 ~= theme.accent2 then
+                    child.BackgroundColor3 = theme.btnBg
+                end
+            end
+        end
+    end
+
+    for _, btn in ipairs(themeButtons) do
+        if btn then
+            local name = btn.Name
+            if name == "themeRoxo" then
+                btn.BackgroundColor3 = themeName == "roxo" and theme.accent or theme.btnBg
+            elseif name == "themePreto" then
+                btn.BackgroundColor3 = themeName == "preto" and theme.accent or theme.btnBg
+            elseif name == "themeCinza" then
+                btn.BackgroundColor3 = themeName == "cinza" and theme.accent or theme.btnBg
+            end
+        end
+    end
+end
+
+-- ==================== CRIAÇÃO DO PAINEL ==================
 local function CreateUI()
     if panelGui then panelGui:Destroy(); panelGui = nil end
 
     panelGui = Instance.new("ScreenGui")
     panelGui.Name = "NukePanel"
     panelGui.ResetOnSpawn = false
+    panelGui.IgnoreGuiInset = true
     panelGui.Parent = player.PlayerGui
 
     -- ========== BOTÃO FLUTUANTE ==========
     toggleButton = Instance.new("ImageButton")
-    toggleButton.Size = UDim2.new(0, 65, 0, 65)
-    toggleButton.Position = UDim2.new(0.02, 0, 0.08, 0)
-    toggleButton.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    toggleButton.Size = UDim2.new(0, 60, 0, 60)
+    toggleButton.Position = UDim2.new(0.02, 0, 0.12, 0)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
     toggleButton.BackgroundTransparency = 0.1
     toggleButton.BorderSizePixel = 2
-    toggleButton.BorderColor3 = Color3.fromRGB(200, 50, 50)
-    toggleButton.Image = "https://i.pinimg.com/736x/f7/2b/4e/f72b4e13a81bee4e5fab3e87052585d8.jpg"
+    toggleButton.BorderColor3 = Color3.fromRGB(150, 80, 220)
+    toggleButton.Image = "https://www.roblox.com/asset-thumbnail/image?assetId=15261756274&width=420&height=420"
     toggleButton.ImageTransparency = 0.3
     toggleButton.Parent = panelGui
 
-    local fallback = Instance.new("TextLabel")
-    fallback.Size = UDim2.new(1, 0, 1, 0)
-    fallback.BackgroundTransparency = 1
-    fallback.Text = "☢️"
-    fallback.TextColor3 = Color3.fromRGB(255, 80, 80)
-    fallback.TextScaled = true
-    fallback.Font = Enum.Font.GothamBold
-    fallback.Parent = toggleButton
+    local uicToggle = Instance.new("UICorner")
+    uicToggle.CornerRadius = UDim.new(1, 0)
+    uicToggle.Parent = toggleButton
+
+    local glow = Instance.new("Frame")
+    glow.Size = UDim2.new(1.4, 0, 1.4, 0)
+    glow.Position = UDim2.new(-0.2, 0, -0.2, 0)
+    glow.BackgroundColor3 = Color3.fromRGB(150, 80, 220)
+    glow.BackgroundTransparency = 0.8
+    glow.BorderSizePixel = 0
+    glow.Parent = toggleButton
+
+    local uicGlow = Instance.new("UICorner")
+    uicGlow.CornerRadius = UDim.new(1, 0)
+    uicGlow.Parent = glow
+
+    spawn(function()
+        while toggleButton and toggleButton.Parent do
+            for i = 0.5, 1, 0.1 do
+                task.wait(0.05)
+                if not toggleButton or not toggleButton.Parent then break end
+                glow.BackgroundTransparency = 0.8 - (i * 0.3)
+                toggleButton.Size = UDim2.new(0, 60 + i * 5, 0, 60 + i * 5)
+            end
+            for i = 1, 0.5, -0.1 do
+                task.wait(0.05)
+                if not toggleButton or not toggleButton.Parent then break end
+                glow.BackgroundTransparency = 0.8 - (i * 0.3)
+                toggleButton.Size = UDim2.new(0, 60 + i * 5, 0, 60 + i * 5)
+            end
+        end
+    end)
 
     -- ========== PAINEL PRINCIPAL ==========
     mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 340, 0, 550)
-    mainFrame.Position = UDim2.new(0.5, -170, 0.5, -275)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 22)
-    mainFrame.BackgroundTransparency = 1
+    mainFrame.Size = UDim2.new(0, 520, 0, 600)
+    mainFrame.Position = UDim2.new(0.5, -260, 0.5, -300)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(18, 12, 28)
+    mainFrame.BackgroundTransparency = 0.15
     mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(120, 80, 200)
+    mainFrame.BorderColor3 = Color3.fromRGB(120, 60, 200)
+    mainFrame.ClipsDescendants = true
     mainFrame.Visible = false
-    mainFrame.Active = true
-    mainFrame.Draggable = true
     mainFrame.Parent = panelGui
 
-    -- Cabeçalho
+    local uicMain = Instance.new("UICorner")
+    uicMain.CornerRadius = UDim.new(0, 16)
+    uicMain.Parent = mainFrame
+
+    -- Bordas RGB arredondadas
+    local function createRoundedBorder(name, size, pos, color)
+        local border = Instance.new("Frame")
+        border.Name = name
+        border.Size = size
+        border.Position = pos
+        border.BackgroundColor3 = color or Color3.fromRGB(150, 80, 220)
+        border.BorderSizePixel = 0
+        border.Parent = mainFrame
+        local uic = Instance.new("UICorner")
+        uic.CornerRadius = UDim.new(0, 8)
+        uic.Parent = border
+        return border
+    end
+
+    local bTop = createRoundedBorder("BorderTop", UDim2.new(1, -20, 0, 4), UDim2.new(0, 10, 0, 4))
+    local bBottom = createRoundedBorder("BorderBottom", UDim2.new(1, -20, 0, 4), UDim2.new(0, 10, 1, -8))
+    local bLeft = createRoundedBorder("BorderLeft", UDim2.new(0, 4, 1, -20), UDim2.new(0, 4, 0, 10))
+    local bRight = createRoundedBorder("BorderRight", UDim2.new(0, 4, 1, -20), UDim2.new(1, -8, 0, 10))
+
+    spawn(function()
+        while task.wait(0.08) do
+            if not mainFrame or not mainFrame.Parent then break end
+            local hue = tick() % 1
+            local color = Color3.fromHSV(hue, 1, 1)
+            bTop.BackgroundColor3 = color
+            bBottom.BackgroundColor3 = color
+            bLeft.BackgroundColor3 = color
+            bRight.BackgroundColor3 = color
+        end
+    end)
+
+    -- ========== CABEÇALHO ==========
     local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 50)
-    header.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
+    header.Size = UDim2.new(1, 0, 0, 55)
+    header.BackgroundColor3 = Color3.fromRGB(25, 18, 40)
+    header.BackgroundTransparency = 0.5
     header.BorderSizePixel = 0
     header.Parent = mainFrame
 
+    local uicHeader = Instance.new("UICorner")
+    uicHeader.CornerRadius = UDim.new(0, 16)
+    uicHeader.Parent = header
+
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.5, 0, 1, 0)
+    title.Size = UDim2.new(0.4, 0, 1, 0)
+    title.Position = UDim2.new(0.03, 0, 0, 0)
     title.BackgroundTransparency = 1
     title.Text = "☢️ NUKE PANEL"
-    title.TextColor3 = Color3.fromRGB(255, 100, 100)
+    title.TextColor3 = Color3.fromRGB(255, 150, 150)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
-    title.Position = UDim2.new(0.05, 0, 0, 0)
+    title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = header
 
-    local tagLabel = Instance.new("TextLabel")
-    tagLabel.Size = UDim2.new(0.45, 0, 1, 0)
-    tagLabel.Position = UDim2.new(0.55, 0, 0, 0)
-    tagLabel.BackgroundTransparency = 1
-    tagLabel.Text = displayTag
-    tagLabel.TextColor3 = hasTag and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(200, 200, 100)
-    tagLabel.TextScaled = true
-    tagLabel.Font = Enum.Font.GothamBold
-    tagLabel.TextXAlignment = Enum.TextXAlignment.Right
-    tagLabel.Parent = header
+    local clockLabel = Instance.new("TextLabel")
+    clockLabel.Size = UDim2.new(0.25, 0, 1, 0)
+    clockLabel.Position = UDim2.new(0.45, 0, 0, 0)
+    clockLabel.BackgroundTransparency = 1
+    clockLabel.Text = ""
+    clockLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+    clockLabel.TextScaled = true
+    clockLabel.Font = Enum.Font.Gotham
+    clockLabel.TextXAlignment = Enum.TextXAlignment.Center
+    clockLabel.Parent = header
 
-    -- Scroll
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, 0, 1, -50)
-    scroll.Position = UDim2.new(0, 0, 0, 50)
-    scroll.BackgroundTransparency = 1
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 1100)
-    scroll.ScrollBarThickness = 4
-    scroll.Parent = mainFrame
+    spawn(function()
+        while task.wait(1) do
+            if not clockLabel or not clockLabel.Parent then break end
+            clockLabel.Text = os.date("%H:%M:%S")
+        end
+    end)
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 40, 0, 40)
+    closeBtn.Position = UDim2.new(1, -50, 0, 8)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextScaled = true
+    closeBtn.Parent = header
+
+    local uicClose = Instance.new("UICorner")
+    uicClose.CornerRadius = UDim.new(1, 0)
+    uicClose.Parent = closeBtn
+
+    closeBtn.MouseButton1Click:Connect(function()
+        state.panelVisible = false
+        animateClose()
+    end)
+
+    -- ========== ABAS ==========
+    local tabFrame = Instance.new("Frame")
+    tabFrame.Size = UDim2.new(1, 0, 0, 45)
+    tabFrame.Position = UDim2.new(0, 0, 0, 55)
+    tabFrame.BackgroundTransparency = 1
+    tabFrame.Parent = mainFrame
+
+    local tabs = {
+        {name = "Início", id = "inicio"},
+        {name = "Movimento", id = "movimento"},
+        {name = "Visual", id = "visual"},
+        {name = "Combate", id = "combate"},
+        {name = "Teleporte", id = "teleporte"},
+        {name = "Config", id = "config"},
+    }
+
+    tabButtons = {}
+    local tabWidth = 1 / #tabs
+
+    for i, tab in ipairs(tabs) do
+        local btn = Instance.new("TextButton")
+        btn.Name = "btn" .. tab.id:gsub("^%l", string.upper)
+        btn.Size = UDim2.new(tabWidth, -2, 1, 0)
+        btn.Position = UDim2.new((i-1) * tabWidth, 1, 0, 0)
+        btn.BackgroundColor3 = (i == 1) and Color3.fromRGB(50, 30, 70) or Color3.fromRGB(30, 20, 50)
+        btn.Text = tab.name
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextScaled = true
+        btn.BorderSizePixel = 0
+        btn.Parent = tabFrame
+
+        local uicTab = Instance.new("UICorner")
+        uicTab.CornerRadius = UDim.new(0, 10)
+        uicTab.Parent = btn
+
+        btn.MouseButton1Click:Connect(function()
+            for _, b in ipairs(tabButtons) do
+                b.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
+            end
+            btn.BackgroundColor3 = Color3.fromRGB(50, 30, 70)
+            showPage(tab.id)
+            currentPage = tab.id
+        end)
+
+        btn.MouseEnter:Connect(function()
+            if btn.BackgroundColor3 ~= Color3.fromRGB(50, 30, 70) then
+                btn.BackgroundColor3 = Color3.fromRGB(40, 25, 60)
+            end
+        end)
+        btn.MouseLeave:Connect(function()
+            if btn.BackgroundColor3 ~= Color3.fromRGB(50, 30, 70) then
+                btn.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
+            end
+        end)
+
+        table.insert(tabButtons, btn)
+    end
+
+    -- ========== CONTEÚDO ==========
+    local contentFrame = Instance.new("Frame")
+    contentFrame.Size = UDim2.new(1, 0, 1, -100)
+    contentFrame.Position = UDim2.new(0, 0, 0, 100)
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.Parent = mainFrame
+
+    function createPage(id)
+        local page = Instance.new("ScrollingFrame")
+        page.Name = "page" .. id:gsub("^%l", string.upper)
+        page.Size = UDim2.new(1, 0, 1, 0)
+        page.BackgroundTransparency = 1
+        page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        page.ScrollBarThickness = 4
+        page.ScrollBarImageColor3 = Color3.fromRGB(150, 80, 220)
+        page.Visible = false
+        page.Parent = contentFrame
+
+        local uicPage = Instance.new("UICorner")
+        uicPage.CornerRadius = UDim.new(0, 12)
+        uicPage.Parent = page
+
+        pages[id] = page
+        return page
+    end
+
+    function showPage(pageId)
+        for id, page in pairs(pages) do
+            if page then
+                page.Visible = (id == pageId)
+            end
+        end
+    end
+
+    -- ========== PÁGINA INÍCIO ==========
+    local pageInicio = createPage("inicio")
+    pageInicio.Visible = true
+    pageInicio.CanvasSize = UDim2.new(0, 0, 0, 500)
 
     local y = 10
 
-    -- ========== FUNÇÕES DE CONSTRUÇÃO ==========
-    local function createSection(text)
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -20, 0, 25)
-        lbl.Position = UDim2.new(0, 10, 0, y)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = "▸ " .. text
-        lbl.TextColor3 = Color3.fromRGB(200, 150, 255)
-        lbl.TextScaled = true
-        lbl.Font = Enum.Font.GothamBold
-        lbl.Parent = scroll
+    -- Avatar
+    local avatar = Instance.new("ImageLabel")
+    avatar.Size = UDim2.new(0, 80, 0, 80)
+    avatar.Position = UDim2.new(0.5, -40, 0, y)
+    avatar.BackgroundColor3 = Color3.fromRGB(40, 30, 60)
+    avatar.BorderSizePixel = 2
+    avatar.BorderColor3 = Color3.fromRGB(150, 80, 220)
+    avatar.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420"
+    avatar.Parent = pageInicio
+
+    local uicAvatar = Instance.new("UICorner")
+    uicAvatar.CornerRadius = UDim.new(1, 0)
+    uicAvatar.Parent = avatar
+
+    y = y + 90
+
+    -- Nome do usuário
+    local userName = Instance.new("TextLabel")
+    userName.Size = UDim2.new(1, -20, 0, 30)
+    userName.Position = UDim2.new(0, 10, 0, y)
+    userName.BackgroundTransparency = 1
+    userName.Text = "👤 " .. player.Name
+    userName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    userName.TextScaled = true
+    userName.Font = Enum.Font.GothamBold
+    userName.Parent = pageInicio
+    y = y + 35
+
+    -- Tag
+    local tagDisplay = Instance.new("TextLabel")
+    tagDisplay.Size = UDim2.new(1, -20, 0, 25)
+    tagDisplay.Position = UDim2.new(0, 10, 0, y)
+    tagDisplay.BackgroundTransparency = 1
+    tagDisplay.Text = "🏷️ " .. displayTag
+    tagDisplay.TextColor3 = hasTag and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(200, 200, 100)
+    tagDisplay.TextScaled = true
+    tagDisplay.Font = Enum.Font.Gotham
+    tagDisplay.Parent = pageInicio
+    y = y + 30
+
+    -- Horário atual
+    local timeDisplay = Instance.new("TextLabel")
+    timeDisplay.Size = UDim2.new(1, -20, 0, 25)
+    timeDisplay.Position = UDim2.new(0, 10, 0, y)
+    timeDisplay.BackgroundTransparency = 1
+    timeDisplay.Text = "🕐 " .. os.date("%H:%M:%S - %d/%m/%Y")
+    timeDisplay.TextColor3 = Color3.fromRGB(200, 200, 220)
+    timeDisplay.TextScaled = true
+    timeDisplay.Font = Enum.Font.Gotham
+    timeDisplay.Parent = pageInicio
+
+    spawn(function()
+        while task.wait(1) do
+            if not timeDisplay or not timeDisplay.Parent then break end
+            timeDisplay.Text = "🕐 " .. os.date("%H:%M:%S - %d/%m/%Y")
+        end
+    end)
+    y = y + 30
+
+    -- Discord
+    local discordDisplay = Instance.new("TextLabel")
+    discordDisplay.Size = UDim2.new(1, -20, 0, 25)
+    discordDisplay.Position = UDim2.new(0, 10, 0, y)
+    discordDisplay.BackgroundTransparency = 1
+    discordDisplay.Text = "💬 Discord: xyno.gg"
+    discordDisplay.TextColor3 = Color3.fromRGB(100, 150, 255)
+    discordDisplay.TextScaled = true
+    discordDisplay.Font = Enum.Font.Gotham
+    discordDisplay.Parent = pageInicio
+    y = y + 30
+
+    -- Usuários online
+    userCountLabel = Instance.new("TextLabel")
+    userCountLabel.Size = UDim2.new(1, -20, 0, 25)
+    userCountLabel.Position = UDim2.new(0, 10, 0, y)
+    userCountLabel.BackgroundTransparency = 1
+    userCountLabel.Text = "👥 Carregando..."
+    userCountLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+    userCountLabel.TextScaled = true
+    userCountLabel.Font = Enum.Font.Gotham
+    userCountLabel.Parent = pageInicio
+    updateUserCount()
+    y = y + 35
+
+    -- ========== CAMPO DE MENSAGEM CORRIGIDO ==========
+    if isOwner then
+        local msgTitle = Instance.new("TextLabel")
+        msgTitle.Size = UDim2.new(1, -20, 0, 25)
+        msgTitle.Position = UDim2.new(0, 10, 0, y)
+        msgTitle.BackgroundTransparency = 1
+        msgTitle.Text = "📨 Enviar Mensagem Global"
+        msgTitle.TextColor3 = Color3.fromRGB(255, 200, 100)
+        msgTitle.TextScaled = true
+        msgTitle.Font = Enum.Font.GothamBold
+        msgTitle.Parent = pageInicio
         y = y + 30
+
+        messageInput = Instance.new("TextBox")
+        messageInput.Size = UDim2.new(0.7, -10, 0, 35)
+        messageInput.Position = UDim2.new(0, 10, 0, y)
+        messageInput.BackgroundColor3 = Color3.fromRGB(40, 30, 60)
+        messageInput.BorderSizePixel = 1
+        messageInput.BorderColor3 = Color3.fromRGB(120, 60, 200)
+        messageInput.Text = ""  -- Começa vazio
+        messageInput.PlaceholderText = "Digite sua mensagem..."  -- Dica
+        messageInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+        messageInput.TextScaled = true
+        messageInput.Font = Enum.Font.Gotham
+        messageInput.ClearTextOnFocus = false  -- Não apaga ao clicar
+        messageInput.Parent = pageInicio
+
+        local uicMsg = Instance.new("UICorner")
+        uicMsg.CornerRadius = UDim.new(0, 8)
+        uicMsg.Parent = messageInput
+
+        sendMessageBtn = Instance.new("TextButton")
+        sendMessageBtn.Size = UDim2.new(0.25, -10, 0, 35)
+        sendMessageBtn.Position = UDim2.new(0.72, 0, 0, y)
+        sendMessageBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+        sendMessageBtn.Text = "Enviar"
+        sendMessageBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        sendMessageBtn.Font = Enum.Font.GothamBold
+        sendMessageBtn.TextScaled = true
+        sendMessageBtn.Parent = pageInicio
+
+        local uicSend = Instance.new("UICorner")
+        uicSend.CornerRadius = UDim.new(0, 8)
+        uicSend.Parent = sendMessageBtn
+
+        sendMessageBtn.MouseButton1Click:Connect(function()
+            local msg = messageInput.Text
+            if msg and msg ~= "" then
+                local remote = replicatedStorage:FindFirstChild("NukeGlobalMessage")
+                if remote then
+                    remote:FireServer(msg)
+                    showNotification("📨 Mensagem enviada: " .. msg, Color3.fromRGB(0, 255, 100))
+                    messageInput.Text = ""  -- Limpa após enviar
+                end
+            else
+                showNotification("Digite uma mensagem antes de enviar!", Color3.fromRGB(255, 100, 100))
+            end
+        end)
+
+        sendMessageBtn.MouseEnter:Connect(function()
+            sendMessageBtn.BackgroundColor3 = Color3.fromRGB(80, 60, 120)
+        end)
+        sendMessageBtn.MouseLeave:Connect(function()
+            sendMessageBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+        end)
+
+        y = y + 45
     end
 
-    local function createToggle(text, callback)
+    pageInicio.CanvasSize = UDim2.new(0, 0, 0, y + 20)
+
+    -- ========== PÁGINA MOVIMENTO ==========
+    local pageMovimento = createPage("movimento")
+    local yMov = 10
+
+    local function createToggleOnPage(page, text, callback, default)
         local container = Instance.new("Frame")
-        container.Size = UDim2.new(1, -20, 0, 30)
-        container.Position = UDim2.new(0, 10, 0, y)
+        container.Size = UDim2.new(1, -20, 0, 35)
+        container.Position = UDim2.new(0, 10, 0, yMov)
         container.BackgroundTransparency = 1
-        container.Parent = scroll
+        container.Parent = page
 
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(1, 0, 1, 0)
-        btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+        btn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
         btn.BorderSizePixel = 1
-        btn.BorderColor3 = Color3.fromRGB(80, 80, 120)
+        btn.BorderColor3 = Color3.fromRGB(80, 60, 120)
         btn.Text = "  " .. text
-        btn.TextColor3 = Color3.fromRGB(220, 220, 220)
+        btn.TextColor3 = Color3.fromRGB(220, 220, 230)
         btn.TextXAlignment = Enum.TextXAlignment.Left
         btn.TextScaled = true
         btn.Font = Enum.Font.Gotham
         btn.Parent = container
 
+        local uicBtn = Instance.new("UICorner")
+        uicBtn.CornerRadius = UDim.new(0, 8)
+        uicBtn.Parent = btn
+
         local indicator = Instance.new("Frame")
-        indicator.Size = UDim2.new(0, 18, 0, 18)
-        indicator.Position = UDim2.new(1, -25, 0.5, -9)
-        indicator.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        indicator.Size = UDim2.new(0, 20, 0, 20)
+        indicator.Position = UDim2.new(1, -28, 0.5, -10)
+        indicator.BackgroundColor3 = Color3.fromRGB(60, 50, 80)
         indicator.BorderSizePixel = 0
         indicator.Parent = btn
 
-        local val = false
+        local uicInd = Instance.new("UICorner")
+        uicInd.CornerRadius = UDim.new(1, 0)
+        uicInd.Parent = indicator
+
+        local val = default or false
         btn.MouseButton1Click:Connect(function()
             val = not val
-            indicator.BackgroundColor3 = val and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(60, 60, 80)
+            indicator.BackgroundColor3 = val and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(60, 50, 80)
             callback(val)
         end)
 
-        btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-        btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60) end)
+        btn.MouseEnter:Connect(function()
+            btn.BackgroundColor3 = Color3.fromRGB(55, 45, 75)
+        end)
+        btn.MouseLeave:Connect(function()
+            btn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
+        end)
 
-        y = y + 35
+        yMov = yMov + 42
+        return btn
     end
 
-    local function createSlider(text, minVal, maxVal, default, callback, suffix)
+    local function createSliderOnPage(page, text, minVal, maxVal, default, callback, suffix)
         suffix = suffix or "x"
         local container = Instance.new("Frame")
-        container.Size = UDim2.new(1, -20, 0, 45)
-        container.Position = UDim2.new(0, 10, 0, y)
+        container.Size = UDim2.new(1, -20, 0, 55)
+        container.Position = UDim2.new(0, 10, 0, yMov)
         container.BackgroundTransparency = 1
-        container.Parent = scroll
+        container.Parent = page
 
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, 0, 0, 18)
+        lbl.Size = UDim2.new(1, 0, 0, 20)
         lbl.BackgroundTransparency = 1
         lbl.Text = text .. " (" .. default .. suffix .. ")"
-        lbl.TextColor3 = Color3.fromRGB(200,200,200)
+        lbl.TextColor3 = Color3.fromRGB(200, 200, 210)
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.TextScaled = true
         lbl.Font = Enum.Font.Gotham
         lbl.Parent = container
 
         local sliderBox = Instance.new("TextBox")
-        sliderBox.Size = UDim2.new(1, 0, 0, 22)
-        sliderBox.Position = UDim2.new(0, 0, 0, 20)
-        sliderBox.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+        sliderBox.Size = UDim2.new(1, 0, 0, 28)
+        sliderBox.Position = UDim2.new(0, 0, 0, 22)
+        sliderBox.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
         sliderBox.BorderSizePixel = 1
-        sliderBox.BorderColor3 = Color3.fromRGB(80,80,120)
+        sliderBox.BorderColor3 = Color3.fromRGB(80, 60, 120)
         sliderBox.Text = tostring(default)
-        sliderBox.TextColor3 = Color3.fromRGB(255,255,255)
+        sliderBox.TextColor3 = Color3.fromRGB(255, 255, 255)
         sliderBox.TextScaled = true
         sliderBox.Font = Enum.Font.Gotham
         sliderBox.Parent = container
+
+        local uicBox = Instance.new("UICorner")
+        uicBox.CornerRadius = UDim.new(0, 8)
+        uicBox.Parent = sliderBox
 
         sliderBox.FocusLost:Connect(function()
             local val = tonumber(sliderBox.Text)
@@ -499,51 +985,31 @@ local function CreateUI()
             end
         end)
 
-        y = y + 50
+        yMov = yMov + 62
     end
 
-    local function createButton(text, callback, color)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -20, 0, 30)
-        btn.Position = UDim2.new(0, 10, 0, y)
-        btn.Text = text
-        btn.TextColor3 = Color3.fromRGB(255,255,255)
-        btn.BackgroundColor3 = color or Color3.fromRGB(60, 40, 60)
-        btn.BorderSizePixel = 1
-        btn.BorderColor3 = Color3.fromRGB(150, 80, 150)
-        btn.Font = Enum.Font.GothamBold
-        btn.TextScaled = true
-        btn.Parent = scroll
-
-        btn.MouseButton1Click:Connect(callback)
-        btn.MouseEnter:Connect(function()
-            btn.BackgroundColor3 = (color or Color3.fromRGB(60,40,60)):Lerp(Color3.fromRGB(255,255,255), 0.2)
-        end)
-        btn.MouseLeave:Connect(function()
-            btn.BackgroundColor3 = color or Color3.fromRGB(60,40,60)
-        end)
-
-        y = y + 35
-    end
-
-    -- ========== CONSTRUIR OPÇÕES ==========
-    createSection("MOVEMENT")
-    createToggle("✈️ Fly", toggleFly)
-    createSlider("Fly Speed", 10, 1000, 50, function(val)
+    -- Movimento
+    createToggleOnPage(pageMovimento, "✈️ Fly", toggleFly, false)
+    createSliderOnPage(pageMovimento, "Fly Speed", 10, 1000, 50, function(val)
         state.flySpeed = val
         if state.fly then
             toggleFly(false)
             toggleFly(true)
         end
     end, "")
-    createToggle("🚪 Noclip", toggleNoclip)
-    createToggle("🦘 Infinite Jump", toggleInfiniteJump)
-    createSlider("Speed", 0.5, 1000, 1, setSpeed)
+    createToggleOnPage(pageMovimento, "🚪 NoClip", toggleNoclip, false)
+    createToggleOnPage(pageMovimento, "🦘 Infinite Jump", toggleInfiniteJump, false)
+    createSliderOnPage(pageMovimento, "Speed", 0.5, 1000, 1, setSpeed)
 
-    createSection("VISUAL")
-    createToggle("👁️ ESP", toggleESP)
-    createToggle("🎥 Third Person", toggleThirdPerson)
-    createSlider("TP Distance", 3, 20, 8, function(val)
+    pageMovimento.CanvasSize = UDim2.new(0, 0, 0, yMov + 20)
+
+    -- ========== PÁGINA VISUAL ==========
+    local pageVisual = createPage("visual")
+    local yVis = 10
+
+    createToggleOnPage(pageVisual, "👁️ ESP", toggleESP, false)
+    createToggleOnPage(pageVisual, "🎥 Third Person", toggleThirdPerson, false)
+    createSliderOnPage(pageVisual, "TP Distance", 3, 20, 8, function(val)
         state.thirdPersonDist = val
         if state.thirdPerson then
             toggleThirdPerson(false)
@@ -551,87 +1017,221 @@ local function CreateUI()
         end
     end, "")
 
-    createSection("COMBAT")
-    createButton("💥 Fling (Nearest)", doFling, Color3.fromRGB(80, 40, 40))
-    createButton("☠️ Kill Nearest", doKillNearest, Color3.fromRGB(80, 30, 30))
+    pageVisual.CanvasSize = UDim2.new(0, 0, 0, yVis + 20)
 
-    -- ========== SEÇÃO TELEPORT (NOVO) ==========
-    createSection("TELEPORT")
+    -- ========== PÁGINA COMBATE ==========
+    local pageCombate = createPage("combate")
+    local yComb = 10
 
-    -- Campo de texto para digitar o nome
+    local function createButtonOnPage(page, text, callback, color)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.9, -20, 0, 40)
+        btn.Position = UDim2.new(0.05, 0, 0, yComb)
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.BackgroundColor3 = color or Color3.fromRGB(60, 40, 80)
+        btn.BorderSizePixel = 1
+        btn.BorderColor3 = Color3.fromRGB(120, 80, 180)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextScaled = true
+        btn.Parent = page
+
+        local uicBtn = Instance.new("UICorner")
+        uicBtn.CornerRadius = UDim.new(0, 10)
+        uicBtn.Parent = btn
+
+        btn.MouseButton1Click:Connect(callback)
+        btn.MouseEnter:Connect(function()
+            btn.BackgroundColor3 = (color or Color3.fromRGB(60, 40, 80)):Lerp(Color3.fromRGB(255, 255, 255), 0.15)
+        end)
+        btn.MouseLeave:Connect(function()
+            btn.BackgroundColor3 = color or Color3.fromRGB(60, 40, 80)
+        end)
+
+        yComb = yComb + 48
+        return btn
+    end
+
+    createButtonOnPage(pageCombate, "💥 Fling (Nearest)", doFling, Color3.fromRGB(80, 40, 40))
+    createButtonOnPage(pageCombate, "☠️ Kill Nearest", doKillNearest, Color3.fromRGB(80, 30, 30))
+
+    pageCombate.CanvasSize = UDim2.new(0, 0, 0, yComb + 20)
+
+    -- ========== PÁGINA TELEPORTE ==========
+    local pageTeleporte = createPage("teleporte")
+    local yTel = 10
+
     local inputBox = Instance.new("TextBox")
-    inputBox.Size = UDim2.new(1, -20, 0, 30)
-    inputBox.Position = UDim2.new(0, 10, 0, y)
-    inputBox.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+    inputBox.Size = UDim2.new(0.9, -20, 0, 35)
+    inputBox.Position = UDim2.new(0.05, 0, 0, yTel)
+    inputBox.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
     inputBox.BorderSizePixel = 1
-    inputBox.BorderColor3 = Color3.fromRGB(80,80,120)
+    inputBox.BorderColor3 = Color3.fromRGB(80, 60, 120)
     inputBox.Text = "Digite 3+ letras"
-    inputBox.TextColor3 = Color3.fromRGB(200,200,200)
+    inputBox.TextColor3 = Color3.fromRGB(200, 200, 200)
     inputBox.TextScaled = true
     inputBox.Font = Enum.Font.Gotham
     inputBox.ClearTextOnFocus = true
-    inputBox.Parent = scroll
-    y = y + 35
+    inputBox.Parent = pageTeleporte
 
-    -- Botão TP
+    local uicInput = Instance.new("UICorner")
+    uicInput.CornerRadius = UDim.new(0, 10)
+    uicInput.Parent = inputBox
+
+    yTel = yTel + 42
+
     local tpBtn = Instance.new("TextButton")
-    tpBtn.Size = UDim2.new(1, -20, 0, 30)
-    tpBtn.Position = UDim2.new(0, 10, 0, y)
+    tpBtn.Size = UDim2.new(0.9, -20, 0, 40)
+    tpBtn.Position = UDim2.new(0.05, 0, 0, yTel)
     tpBtn.Text = "🚀 Teleportar"
-    tpBtn.TextColor3 = Color3.fromRGB(255,255,255)
-    tpBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
+    tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tpBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
     tpBtn.BorderSizePixel = 1
+    tpBtn.BorderColor3 = Color3.fromRGB(80, 120, 180)
     tpBtn.Font = Enum.Font.GothamBold
     tpBtn.TextScaled = true
-    tpBtn.Parent = scroll
+    tpBtn.Parent = pageTeleporte
+
+    local uicTp = Instance.new("UICorner")
+    uicTp.CornerRadius = UDim.new(0, 10)
+    uicTp.Parent = tpBtn
+
     tpBtn.MouseButton1Click:Connect(function()
         local name = inputBox.Text
         if #name >= 3 then
             teleportToPlayerByName(name)
         else
-            print("Digite pelo menos 3 letras!")
+            showNotification("Digite pelo menos 3 letras!", Color3.fromRGB(255, 100, 100))
         end
     end)
-    tpBtn.MouseEnter:Connect(function() tpBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 100) end)
-    tpBtn.MouseLeave:Connect(function() tpBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 80) end)
-    y = y + 40
 
-    -- Fechar
-    createButton("❌ Fechar Painel", function()
-        state.panelVisible = false
-        animateClose()
-    end, Color3.fromRGB(100, 30, 30))
+    tpBtn.MouseEnter:Connect(function()
+        tpBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
+    end)
+    tpBtn.MouseLeave:Connect(function()
+        tpBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+    end)
 
-    scroll.CanvasSize = UDim2.new(0, 0, 0, y + 20)
+    yTel = yTel + 48
+    pageTeleporte.CanvasSize = UDim2.new(0, 0, 0, yTel + 20)
+
+    -- ========== PÁGINA CONFIG ==========
+    local pageConfig = createPage("config")
+    local yCfg = 10
+
+    local themeTitle = Instance.new("TextLabel")
+    themeTitle.Size = UDim2.new(1, -20, 0, 30)
+    themeTitle.Position = UDim2.new(0, 10, 0, yCfg)
+    themeTitle.BackgroundTransparency = 1
+    themeTitle.Text = "🎨 Temas"
+    themeTitle.TextColor3 = Color3.fromRGB(200, 180, 220)
+    themeTitle.TextScaled = true
+    themeTitle.Font = Enum.Font.GothamBold
+    themeTitle.TextXAlignment = Enum.TextXAlignment.Left
+    themeTitle.Parent = pageConfig
+    yCfg = yCfg + 35
+
+    local function createThemeButton(text, themeName, color)
+        local btn = Instance.new("TextButton")
+        btn.Name = "theme" .. themeName:gsub("^%l", string.upper)
+        btn.Size = UDim2.new(0.28, -10, 0, 40)
+        btn.Position = UDim2.new((#themeButtons) * 0.31 + 0.02, 0, 0, yCfg)
+        btn.BackgroundColor3 = (state.currentTheme == themeName) and Color3.fromRGB(100, 60, 180) or Color3.fromRGB(45, 35, 65)
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextScaled = true
+        btn.BorderSizePixel = 1
+        btn.BorderColor3 = Color3.fromRGB(80, 60, 120)
+        btn.Parent = pageConfig
+
+        local uicBtn = Instance.new("UICorner")
+        uicBtn.CornerRadius = UDim.new(0, 10)
+        uicBtn.Parent = btn
+
+        btn.MouseButton1Click:Connect(function()
+            applyTheme(themeName)
+            for _, b in ipairs(themeButtons) do
+                if b then
+                    local bName = b.Name
+                    if bName == "themeRoxo" then
+                        b.BackgroundColor3 = themeName == "roxo" and Color3.fromRGB(100, 60, 180) or Color3.fromRGB(45, 35, 65)
+                    elseif bName == "themePreto" then
+                        b.BackgroundColor3 = themeName == "preto" and Color3.fromRGB(100, 60, 180) or Color3.fromRGB(45, 35, 65)
+                    elseif bName == "themeCinza" then
+                        b.BackgroundColor3 = themeName == "cinza" and Color3.fromRGB(100, 60, 180) or Color3.fromRGB(45, 35, 65)
+                    end
+                end
+            end
+        end)
+
+        btn.MouseEnter:Connect(function()
+            btn.BackgroundColor3 = btn.BackgroundColor3:Lerp(Color3.fromRGB(255,255,255), 0.15)
+        end)
+        btn.MouseLeave:Connect(function()
+            if themeName == state.currentTheme then
+                btn.BackgroundColor3 = Color3.fromRGB(100, 60, 180)
+            else
+                btn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
+            end
+        end)
+
+        table.insert(themeButtons, btn)
+        return btn
+    end
+
+    createThemeButton("💜 Roxo", "roxo")
+    createThemeButton("🖤 Preto", "preto")
+    createThemeButton("🤍 Cinza", "cinza")
+
+    yCfg = yCfg + 50
+    pageConfig.CanvasSize = UDim2.new(0, 0, 0, yCfg + 20)
 
     -- ========== ANIMAÇÕES ==========
     local function animateOpen()
         mainFrame.Visible = true
         mainFrame.BackgroundTransparency = 1
         mainFrame.Size = UDim2.new(0, 0, 0, 0)
-        tweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
-            Size = UDim2.new(0, 340, 0, 550),
+        local tween = tweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 520, 0, 600),
             BackgroundTransparency = 0.15
-        }):Play()
+        })
+        tween:Play()
     end
 
     local function animateClose()
-        tweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+        local tween = tweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             Size = UDim2.new(0, 0, 0, 0),
             BackgroundTransparency = 1
-        }):Play()
-        task.wait(0.3)
-        mainFrame.Visible = false
-        mainFrame.Size = UDim2.new(0, 340, 0, 550)
+        })
+        tween:Play()
+        tween.Completed:Connect(function()
+            mainFrame.Visible = false
+            mainFrame.Size = UDim2.new(0, 520, 0, 600)
+        end)
     end
 
     -- ========== BOTÃO FLUTUANTE ==========
     toggleButton.MouseButton1Click:Connect(function()
         state.panelVisible = not state.panelVisible
-        if state.panelVisible then animateOpen() else animateClose() end
+        if state.panelVisible then
+            animateOpen()
+            applyTheme(state.currentTheme)
+            showPage(currentPage)
+            for _, btn in ipairs(tabButtons) do
+                btn.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
+            end
+            for _, btn in ipairs(tabButtons) do
+                if btn.Name == "btn" .. currentPage:gsub("^%l", string.upper) then
+                    btn.BackgroundColor3 = Color3.fromRGB(50, 30, 70)
+                end
+            end
+        else
+            animateClose()
+        end
     end)
 
-    -- Fechar com ESC
+    -- ========== TECLA ESC ==========
     userInput.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if input.KeyCode == Enum.KeyCode.Escape and mainFrame.Visible then
@@ -640,13 +1240,18 @@ local function CreateUI()
         end
     end)
 
-    panelGui._mainFrame = mainFrame
+    applyTheme("roxo")
+    return panelGui
 end
 
--- ==================== INICIALIZAR ================
+-- ==================== INICIALIZAR ====================
+setupGlobalMessages()
+
 local function init()
     if player.Character then
         CreateUI()
+        task.wait(1)
+        showNotification("☢️ Nuke Panel v6.1 carregado! Clique no botão para abrir.", Color3.fromRGB(150, 80, 220))
     else
         player.CharacterAdded:Wait()
         CreateUI()
@@ -655,15 +1260,26 @@ end
 
 init()
 
+print("☢️ Nuke Panel v6.1 carregado!")
+print("👤 Usuário: " .. player.Name)
+print("🏷️ Tag: " .. displayTag)
+
 _G.ReopenNuke = function()
     if panelGui then panelGui:Destroy() end
     CreateUI()
     print("☢️ Painel recriado!")
 end
 
-print("☢️ Nuke Panel carregado! Clique no botão ☢️ para abrir.")
-if hasTag then
-    print("✅ Staff: " .. userTag)
-else
-    print("🔓 Usuário normal: Dinu User")
+_G.SendGlobalMessage = function(msg)
+    if isOwner then
+        local remote = replicatedStorage:FindFirstChild("NukeGlobalMessage")
+        if remote then
+            remote:FireServer(msg)
+            showNotification("📨 Mensagem enviada: " .. msg, Color3.fromRGB(0, 255, 100))
+        end
+    else
+        print("❌ Apenas o Dono pode enviar mensagens globais!")
+    end
 end
+
+print("💬 Comandos: _G.SendGlobalMessage('texto')")
